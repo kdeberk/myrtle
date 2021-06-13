@@ -1,0 +1,12 @@
+(define part1 (λ [input]
+  (let [cs (chars input)]
+    (- (count (λ [x] (= x '(')))
+       (count (λ [x] (= x ')'))))))
+
+(define part2 (λ [directions idx floor]
+   (cond (= floor -1) idx
+         (empty? directions) nil
+         :else (let [direction (first directions)]
+                 (recur (rest directions)
+                        (+ idx 1)
+                        (+ floor (if (= '(' directions) 1 -1)))))
