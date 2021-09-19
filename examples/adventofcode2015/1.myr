@@ -1,12 +1,21 @@
-(define part1 (λ [input]
-  (let [cs (chars input)]
-    (- (count (λ [x] (= x '(')))
-       (count (λ [x] (= x ')'))))))
+(define part1
+  (λ [input]
+    (let [cs (str:chars input)]
+      (- (count (λ [x] (= x '(')) cs)
+         (count (λ [x] (= x ')')) cs)))))
 
-(define part2 (λ [directions idx floor]
-   (cond (= floor -1) idx
-         (empty? directions) nil
-         :else (let [direction (first directions)]
-                 (recur (rest directions)
-                        (+ idx 1)
-                        (+ floor (if (= '(' directions) 1 -1)))))
+(define part2
+  (λ [input]
+     (let [inner (λ [instructions idx floor]
+                    (cond (= floor -1) idx
+                          (empty? instructions) nil
+                          :else (let [cur (first instructions)]
+                                  (recur (rest instructions)
+                                         (+ idx 1)
+                                         (+ floor (if (= '(' cur) 1 -1))))))]
+       (inner (seq (str:chars input)) 0 0))))
+
+(define puzzle (str:trim (io:read-file "examples/adventofcode2015/input/1.txt")))
+
+[(part1 puzzle)
+ (part2 puzzle)]

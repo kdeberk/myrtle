@@ -1,5 +1,6 @@
 use crate::types::SExpr;
 use crate::utils;
+use std::rc::Rc;
 
 // TODO:
 // - read cons (foo . bar)
@@ -8,13 +9,30 @@ use crate::utils;
 use regex::Regex;
 
 pub fn read(input: &String) -> Result<SExpr, String> {
-    let input = input.trim();
-    let (sexpr, read) = read_sexpr(input)?;
+    let mut input = input.trim();
+    let mut sexprs: Vec<SExpr> = vec![];
 
-    if read < input.len() {
-        Err(format!("Trailing: {}", &input[read..]))
-    } else {
-        Ok(sexpr)
+    while 0 < input.len() {
+        let (sexpr, read) = read_sexpr(&input)?;
+        sexprs.push(sexpr);
+        input = input[read..input.len()].trim();
+    }
+
+    match sexprs.len() {
+        0 => Err(str!("empty input")),
+        1 => Ok(sexprs.remove(0)),
+        _ => {
+            let mut cur = SExpr::NIL;
+
+            for el in sexprs.into_iter().rev() {
+                cur = SExpr::Cons(Box::from(el), Rc::from(cur));
+            }
+
+            Ok(SExpr::Cons(
+                Box::from(SExpr::Symbol(Rc::from("do"))),
+                Rc::from(cur),
+            ))
+        }
     }
 }
 
@@ -29,7 +47,7 @@ fn read_sexpr(s: &str) -> Result<(SExpr, usize), String> {
             '0'..='9' => read_number(s),
             '-' => read_negative_number(s).or_else(|_| read_symbol(s)),
             c if !c.is_whitespace() => read_symbol(s),
-            _ => Err(format!("Unrecognized input {}", s)),
+            _ => Err(format!("Unrecognized input {:?}", s)),
         },
     }
 }
@@ -43,7 +61,7 @@ fn read_list(s: &str) -> Result<(SExpr, usize), String> {
         let mut cur: SExpr = SExpr::NIL;
 
         while let Some(sexpr) = seq.pop() {
-            cur = SExpr::Cons(Box::new(sexpr), Box::new(cur));
+            cur = SExpr::Cons(Box::new(sexpr), Rc::new(cur));
         }
 
         Ok((cur, idx))
@@ -58,7 +76,7 @@ fn read_vector(s: &str) -> Result<(SExpr, usize), String> {
         vec.push(sexpr)
     }
 
-    return Ok((SExpr::Vector(vec), idx));
+    return Ok((SExpr::Vector(Rc::new(vec)), idx));
 }
 
 fn read_sequence(s: &str, until: char) -> Result<(Vec<SExpr>, usize), String> {
@@ -189,7 +207,7 @@ fn read_string(s: &str) -> Result<(SExpr, usize), String> {
         None => Err(str!(format!("invalid string: {}", s))),
         Some(cap) => {
             let ss = cap.get(1).unwrap().as_str();
-            Ok((SExpr::String(ss.to_string()), 2 + ss.len()))
+            Ok((SExpr::String(Rc::from(ss)), 2 + ss.len()))
         }
     }
 }
@@ -219,7 +237,7 @@ fn read_symbol(s: &str) -> Result<(SExpr, usize), String> {
         "true" => Ok((SExpr::Boolean(true), sym.len())),
         "false" => Ok((SExpr::Boolean(false), sym.len())),
         "undefined" => Ok((SExpr::Undefined, sym.len())),
-        _ => Ok((SExpr::Symbol(sym.to_string()), sym.len())),
+        _ => Ok((SExpr::Symbol(Rc::from(sym)), sym.len())),
     }
 }
 
@@ -231,7 +249,7 @@ mod tests {
     fn test_read_sexpr() {
         let t = map! {
             "1" => Ok((SExpr::Integer(1), 1)),
-            "[1]" => Ok((SExpr::Vector(vec![SExpr::Integer(1)]), 3))
+            "[1]" => Ok((SExpr::Vector(Rc::from(vec![SExpr::Integer(1)])), 3))
         };
         for (k, v) in t {
             assert_eq!(read_sexpr(k), v);
@@ -243,13 +261,13 @@ mod tests {
             "()" => Ok((SExpr::NIL, 2)),
             "(1)" => Ok((SExpr::Cons(
                 Box::new(SExpr::Integer(1)),
-                Box::new(SExpr::NIL),
+                Rc::new(SExpr::NIL),
             ), 3)),
             r#"(1 "foo")"# => Ok((SExpr::Cons(
                 Box::new(SExpr::Integer(1)),
-                Box::new(SExpr::Cons(
-                    Box::new(SExpr::String(str!("foo"))),
-                    Box::new(SExpr::NIL),
+                Rc::new(SExpr::Cons(
+                    Box::new(SExpr::String(Rc::from("foo"))),
+                    Rc::new(SExpr::NIL),
                 )),
             ), 9))
         };
@@ -261,12 +279,12 @@ mod tests {
     #[test]
     fn test_read_vector() {
         let t = map! {
-            "[]" => Ok((SExpr::Vector(vec![]), 2)),
-            "[1 2 3]" => Ok((SExpr::Vector(vec![
+            "[]" => Ok((SExpr::Vector(Rc::from(vec![])), 2)),
+            "[1 2 3]" => Ok((SExpr::Vector(Rc::from(vec![
                 SExpr::Integer(1),
                 SExpr::Integer(2),
                 SExpr::Integer(3),
-            ]), 7))
+            ])), 7))
         };
         for (k, v) in t {
             assert_eq!(read_vector(k), v);
@@ -279,8 +297,8 @@ mod tests {
             "()" => Ok((vec![], 2)),
             r#"(1 "foo" bar)"# => Ok((vec![
                 SExpr::Integer(1),
-                SExpr::String(str!("foo")),
-                SExpr::Symbol(str!("bar"))], 13)),
+                SExpr::String(Rc::from("foo")),
+                SExpr::Symbol(Rc::from("bar"))], 13)),
             "(  1    2  )" => Ok((vec![
                 SExpr::Integer(1),
                 SExpr::Integer(2)], 12)),
@@ -305,8 +323,8 @@ mod tests {
     #[test]
     fn test_read_string() {
         let t = map! {
-            r#""foo""# => Ok((SExpr::String(str!("foo")), 5)),
-            r#""foo bar baz""# => Ok((SExpr::String(str!("foo bar baz")), 13)),
+            r#""foo""# => Ok((SExpr::String(Rc::from("foo")), 5)),
+            r#""foo bar baz""# => Ok((SExpr::String(Rc::from("foo bar baz")), 13)),
             r#""foo'"# => Err(str!("invalid string: \"foo'")),
             r#""foo"# => Err(str!("invalid string: \"foo"))
         };
@@ -319,8 +337,8 @@ mod tests {
     #[test]
     fn test_read_symbol() {
         let t = map! {
-            "foo123" => Ok((SExpr::Symbol(str!("foo123")), 6)),
-            "foo-bar" => Ok((SExpr::Symbol(str!("foo-bar")), 7)),
+            "foo123" => Ok((SExpr::Symbol(Rc::from("foo123")), 6)),
+            "foo-bar" => Ok((SExpr::Symbol(Rc::from("foo-bar")), 7)),
             "nil" => Ok((SExpr::NIL, 3)),
             "NiL" => Ok((SExpr::NIL, 3))
         };

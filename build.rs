@@ -54,8 +54,8 @@ fn generate_test_fn(name: &str, example: &EvalExample) -> proc_macro2::TokenStre
         fn #fn_name() {
             let scope = builtin::scope();
             assert_eq!(
-                read::read(&#expr.to_owned())
-                    .and_then(|sexpr| eval::eval_sexpr(scope.clone(), sexpr)).unwrap(),
+                read(&#expr.to_owned())
+                    .and_then(|sexpr| eval_sexpr(&scope, &sexpr)).unwrap(),
                 #expect)
         }
     )
@@ -66,17 +66,17 @@ fn tokens_for_value(val: &serde_yaml::Value) -> proc_macro2::TokenStream {
     use serde_yaml::*;
 
     match val {
-        Value::Null => quote!(types::SExpr::NIL),
-        Value::Bool(true) => quote!(types::SExpr::Boolean(true)),
-        Value::Bool(false) => quote!(types::SExpr::Boolean(false)),
+        Value::Null => quote!(SExpr::NIL),
+        Value::Bool(true) => quote!(SExpr::Boolean(true)),
+        Value::Bool(false) => quote!(SExpr::Boolean(false)),
         Value::Number(n) if n.is_i64() => {
             let n = n.as_i64().unwrap();
-            quote!(types::SExpr::Integer(#n))
+            quote!(SExpr::Integer(#n))
         }
         Value::String(s) => {
             let s = syn::LitStr::new(&s, proc_macro2::Span::call_site());
 
-            quote!(read::read(&#s.to_owned()).unwrap())
+            quote!(read(&#s.to_owned()).unwrap())
         }
         other => panic!("Unknown value {:?}", other),
     }

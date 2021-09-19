@@ -1,0 +1,14 @@
+(define min
+  (λ [& xs]
+    (reduce (λ [acc x] (if (<= acc x) acc x))
+            xs)))
+
+(define part1
+  (λ [input]
+    (reduce +
+      (map (λ [line]
+             (let [[w h l] (map (λ [str] (convert str :integer))
+                           (str:split line 'x'))]
+               (+ (* 2 w h) (* 2 w l) (* 2 h l)
+                  (min (list (* w h) (* w l) (+ h l))))))
+           (str:split input '\n')))))

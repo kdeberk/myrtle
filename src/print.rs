@@ -1,4 +1,4 @@
-use crate::types::{BuiltinFn, SExpr, SpecialForm};
+use crate::types::SExpr;
 
 use std::fmt;
 
@@ -35,7 +35,7 @@ impl fmt::Display for SExpr {
                 }
                 write!(f, ")")?
             }
-            SExpr::BuiltinFn(BuiltinFn { name, f: _ }) => write!(f, "<builtin {}>", name)?,
+            SExpr::BuiltinFn(builtin) => write!(f, "<builtin {}>", builtin.name)?,
             SExpr::Vector(vec) => {
                 write!(f, "[")?;
                 for (i, el) in vec.iter().enumerate() {
@@ -53,7 +53,8 @@ impl fmt::Display for SExpr {
                 }
                 write!(f, "{}>", body)?
             }
-            SExpr::SpecialForm(SpecialForm { name, f: _ }) => write!(f, "<special {}>", name)?,
+            SExpr::SpecialForm(form) => write!(f, "<special {}>", form.name)?,
+            SExpr::Recur(_) => write!(f, "<recur>")?,
         };
         Ok(())
     }

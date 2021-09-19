@@ -1,6 +1,8 @@
 use crate::eval::eval_sexpr;
 use crate::read;
 use crate::scope::Scope;
+
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use rustyline::error::ReadlineError;
@@ -13,7 +15,7 @@ pub struct Error {
     pub reason: String,
 }
 
-pub fn main_loop(scope: Rc<Scope>) -> Result<(), Error> {
+pub fn main_loop(scope: Rc<RefCell<Scope>>) -> Result<(), Error> {
     let mut rl = create_line_reader();
 
     loop {
@@ -24,9 +26,9 @@ pub fn main_loop(scope: Rc<Scope>) -> Result<(), Error> {
                     Ok(sexpr) => {
                         rl.add_history_entry(line.as_str());
 
-                        match eval_sexpr(scope.clone(), sexpr) {
+                        match eval_sexpr(&scope, &sexpr) {
                             Ok(sexpr) => println!("{}", sexpr),
-                            Err(str) => println!("error: {}", str),
+                            Err(e) => println!("error: {}", e),
                         }
                     }
                 };
