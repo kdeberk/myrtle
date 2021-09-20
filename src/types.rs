@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 pub type EvalResult = Result<SExpr, String>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct BuiltinFn {
     pub name: String,
     pub f: fn(Vec<SExpr>) -> EvalResult,
@@ -46,7 +46,84 @@ pub enum SExpr {
 
     SpecialForm(Rc<SpecialForm>),
     BuiltinFn(Rc<BuiltinFn>),
-    Closure(Rc<Vec<String>>, Rc<RefCell<Scope>>, Rc<SExpr>),
+    Closure(Rc<Vec<Parameter>>, Rc<RefCell<Scope>>, Rc<SExpr>),
 
     Recur(Vec<SExpr>), // TODO: this is a hack
+}
+
+impl SExpr {
+    pub fn name(&self) -> &'static str {
+        use SExpr::*;
+
+        match self {
+            NIL => "nil",
+            Undefined => "undefined",
+            Symbol(_) => "symbol",
+            String(_) => "string",
+            Char(_) => "char",
+            Integer(_) => "integer",
+            Ratio(_, _) => "ratio",
+            Boolean(_) => "boolean",
+            Cons(_, _) => "cons",
+            Vector(_) => "vector",
+            SpecialForm(_) => "specialform",
+            BuiltinFn(_) => "builtinfn",
+            Closure(_, _, _) => "closure",
+            Recur(_) => "recur",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Parameter {
+    Single(Rc<str>),
+    List(Rc<Vec<Parameter>>),
+    Rest(Rc<str>),
+}
+
+impl Parameter {
+    pub fn read_argument(
+        &self,
+        binding: &Rc<RefCell<Scope>>,
+        args: &mut Vec<SExpr>,
+    ) -> Result<(), String> {
+        use Parameter::*;
+
+        match self {
+            Single(name) => {
+                if 0 == args.len() {
+                    Err(format!("missing argument {}", name))
+                } else {
+                    binding.borrow_mut().define(name, args.remove(0));
+                    Ok(())
+                }
+            }
+            List(params) => {
+                if 0 == args.len() {
+                    Err(format!("missing argument {:?}", params))
+                } else {
+                    match args.remove(0) {
+                        SExpr::Vector(v) => {
+                            let v = &mut (*v).clone();
+                            for p in params.iter() {
+                                p.read_argument(binding, v)?;
+                            }
+                        }
+                        _ => return Err(str!("cannot destruct vector arg")),
+                    }
+                    // pop first args, it needs to be a vector
+
+                    Ok(())
+                }
+            }
+            Rest(name) => {
+                let mut cur = SExpr::NIL;
+                for el in args.iter().rev() {
+                    cur = SExpr::Cons(Box::from(el.clone()), Rc::from(cur));
+                }
+                binding.borrow_mut().define(name, cur);
+                Ok(())
+            }
+        }
+    }
 }

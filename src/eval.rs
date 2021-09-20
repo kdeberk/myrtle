@@ -34,7 +34,7 @@ pub fn eval_sexpr(scope: &Rc<RefCell<Scope>>, sexpr: &SExpr) -> EvalResult {
                     args.append(&mut eval_args(scope, &*cons)?);
                     iter_nth(args)
                 }
-                _ => Err(format!("cannot call this")), // TODO: figure out how to get car again
+                _ => Err(format!("cannot call this {}", called.name())),
             }
         }
         Vector(v) => {
@@ -61,17 +61,9 @@ fn call_closure(closure: &SExpr, args: Vec<SExpr>) -> EvalResult {
         let mut args = args;
 
         loop {
-            if args.len() != params.len() {
-                return Err(format!(
-                    "wrong number of args. Expect {}, got {}",
-                    params.len(),
-                    args.len()
-                ));
-            }
-
             let binding = Scope::unnamed(Some(binding));
-            for (param, arg) in params.iter().zip(args) {
-                binding.borrow_mut().define(param, arg.clone());
+            for param in params.iter() {
+                param.read_argument(&binding, &mut args)?;
             }
 
             let result = eval_sexpr(&binding, &**body)?;

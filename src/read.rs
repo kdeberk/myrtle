@@ -214,14 +214,22 @@ fn read_string(s: &str) -> Result<(SExpr, usize), String> {
 
 fn read_char(s: &str) -> Result<(SExpr, usize), String> {
     lazy_static! {
-        static ref R: Regex = Regex::new(r"^'(.)'").unwrap();
+        static ref R: Regex = Regex::new(r"^'(\\?.)'").unwrap();
     }
 
     match R.captures(s) {
         None => Err(str!(format!("invalid char: {}", s))),
         Some(cap) => {
             let ss = cap.get(1).unwrap().as_str();
-            Ok((SExpr::Char(ss.chars().next().unwrap()), 2 + ss.len()))
+            let mut cs = ss.chars();
+            let c = match (cs.next(), cs.next()) {
+                (Some('\\'), Some('n')) => '\n',
+                (Some('\\'), Some(c)) => c,
+                (Some(c), None) => c,
+                (_, _) => unreachable!(),
+            };
+
+            Ok((SExpr::Char(c), 2 + ss.len()))
         }
     }
 }

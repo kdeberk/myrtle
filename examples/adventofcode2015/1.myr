@@ -15,7 +15,6 @@
                                          (+ floor (if (= '(' cur) 1 -1))))))]
        (inner (seq (str:chars input)) 0 0))))
 
-(define puzzle (str:trim (io:read-file "examples/adventofcode2015/input/1.txt")))
-
-[(part1 puzzle)
- (part2 puzzle)]
+(let [input (str:trim (io:read-file "examples/adventofcode2015/input/1.txt"))]
+  [(part1 input)
+   (part2 input)])

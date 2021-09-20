@@ -49,7 +49,7 @@ impl fmt::Display for SExpr {
             SExpr::Closure(params, _, body) => {
                 write!(f, "<closure ")?;
                 for el in params.iter() {
-                    write!(f, "{} ", el)?;
+                    write!(f, "{:?} ", el)?;
                 }
                 write!(f, "{}>", body)?
             }

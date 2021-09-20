@@ -38,7 +38,7 @@ fn read_examples(path: &std::path::Path) -> Vec<EvalExample> {
 }
 
 fn generate_test_fn(name: &str, example: &EvalExample) -> proc_macro2::TokenStream {
-    let re = regex::Regex::new(r"[-\s?]+").unwrap();
+    let re = regex::Regex::new(r"[-\s?,]+").unwrap();
     let fn_name = format!(
         "test_example_{}_{}",
         name,

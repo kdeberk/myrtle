@@ -1,7 +1,7 @@
 use crate::eval::{call_callable, eval_sexpr};
 use crate::read::read;
 use crate::scope::Scope;
-use crate::types::{BuiltinFn, EvalResult, SExpr, SpecialForm};
+use crate::types::{BuiltinFn, EvalResult, Parameter, SExpr, SpecialForm};
 use crate::utils::Ratio;
 
 use std::cell::RefCell;
@@ -11,7 +11,8 @@ use std::rc::Rc;
 // - define consts: e.g. pi / π -> Ratio(1146408/364913)
 // - rust macro for checking parameter count, parameter types
 // - define defmacro
-// - determine what cond and if should when pred returns Undefined
+// - determine what cond and if should do when pred returns Undefined
+// - determine whether we still want to keep undefined
 
 pub fn scope() -> Rc<RefCell<Scope>> {
     let ns = Scope::named(str!("builtin"), None);
@@ -48,10 +49,13 @@ pub fn scope() -> Rc<RefCell<Scope>> {
     define_function(&ns, "/", math_div);
     define_function(&ns, "mod", math_mod);
 
+    // Convert function
+    define_function(&ns, "convert", convert);
+
     // String functions
     define_function(&ns, "str:chars", str_chars);
     define_function(&ns, "str:trim", str_trim);
-    // TODO: split
+    define_function(&ns, "str:split", str_split);
 
     // Iter functions
     define_function(&ns, "empty?", empty);
@@ -59,8 +63,9 @@ pub fn scope() -> Rc<RefCell<Scope>> {
     define_function(&ns, "find", iter_find);
     define_function(&ns, "nth", iter_nth);
     define_function(&ns, "seq", iter_seq);
+    define_function(&ns, "vec", iter_vec);
     define_function(&ns, "reduce", iter_reduce);
-    // TODO: map, reduce
+    define_function(&ns, "map", iter_map);
 
     define_function(&ns, "io:read-file", read_file);
 
@@ -123,15 +128,10 @@ fn let_expr(scope: &Rc<RefCell<Scope>>, args: Vec<SExpr>) -> EvalResult {
 
             let mut idx = 0;
             while idx < names_and_exprs.len() {
-                let name = &names_and_exprs[idx];
+                let dest = &names_and_exprs[idx];
                 let expr = &names_and_exprs[idx + 1];
 
-                if let SExpr::Symbol(sym) = name {
-                    let val = eval_sexpr(&binding, &expr)?;
-                    binding.borrow_mut().define(&sym, val);
-                } else {
-                    return Err(str!("cannot bind value to non-symbol"));
-                }
+                destruct_bind(&scope, &binding, dest, &eval_sexpr(&scope, expr)?)?;
                 idx += 2;
             }
             eval_sexpr(&binding, &body)
@@ -140,31 +140,84 @@ fn let_expr(scope: &Rc<RefCell<Scope>>, args: Vec<SExpr>) -> EvalResult {
     }
 }
 
+fn destruct_bind(
+    scope: &Rc<RefCell<Scope>>,
+    binding: &Rc<RefCell<Scope>>,
+    dest: &SExpr,
+    arg: &SExpr,
+) -> Result<(), String> {
+    match (dest, arg) {
+        (SExpr::Symbol(sym), arg) => {
+            binding.borrow_mut().define(&sym, arg.clone());
+        }
+        (SExpr::Vector(dests), SExpr::Vector(args)) => {
+            if args.len() < dests.len() {
+                return Err(str!("not enough values")); // TODO: perhaps undefined?
+            }
+
+            for (dest, arg) in dests.iter().zip(args.iter()) {
+                // TODO: support rest &?
+                destruct_bind(scope, binding, dest, &eval_sexpr(&scope, arg)?)?;
+            }
+        }
+        (SExpr::Vector(dests), SExpr::Cons(_, _)) => {
+            let mut idx = 0;
+            let mut cur = arg;
+            while let SExpr::Cons(car, cons) = cur {
+                destruct_bind(scope, binding, &dests[idx], car)?;
+                cur = cons;
+                idx += 1;
+            }
+        }
+        _ => return Err(format!("wrong let binding {} {}", dest.name(), arg.name())),
+    }
+    Ok(())
+}
+
 fn lambda(scope: &Rc<RefCell<Scope>>, args: Vec<SExpr>) -> EvalResult {
     if 2 != args.len() {
         return Err(str!("lambda accepts 2 arguments"));
     }
 
     match (&args[0], &args[1]) {
-        (SExpr::Vector(vec), body) => {
-            let mut params: Vec<String> = vec![];
-
-            for p in (&*vec).iter() {
-                match p {
-                    SExpr::Symbol(sym) => params.push(sym.to_string()),
-                    // TODO: allow vectors as params: arguments are destructured during call.
-                    _ => return Err(str!("param must be a symbol")),
-                }
-            }
-
-            Ok(SExpr::Closure(
-                Rc::from(params),
-                Rc::clone(scope),
-                Rc::from(body.clone()),
-            ))
-        }
+        (SExpr::Vector(v), body) => Ok(SExpr::Closure(
+            Rc::from(read_parameters(&v)?),
+            Rc::clone(scope),
+            Rc::from(body.clone()),
+        )),
         _ => Err(str!("lambda params should be a vector")),
     }
+}
+
+fn read_parameters(v: &Vec<SExpr>) -> Result<Vec<Parameter>, String> {
+    let mut params: Vec<Parameter> = vec![];
+
+    let mut idx = 0;
+    while idx < v.len() {
+        match &v[idx] {
+            SExpr::Symbol(sym) => {
+                if "&" == &**sym {
+                    if idx != v.len() - 2 {
+                        return Err(str!("& param was not last"));
+                    }
+                    if let SExpr::Symbol(sym) = &v[idx + 1] {
+                        params.push(Parameter::Rest(Rc::clone(sym)));
+                        break;
+                    } else {
+                        return Err(str!("last param must be a symbol"));
+                    }
+                } else {
+                    params.push(Parameter::Single(Rc::clone(sym)));
+                }
+            }
+            SExpr::Vector(v) => {
+                params.push(Parameter::List(Rc::from(read_parameters(v)?)));
+            }
+            _ => return Err(str!("param must be a symbol or a vector")),
+        }
+        idx += 1;
+    }
+    Ok(params)
 }
 
 fn define_expr(scope: &Rc<RefCell<Scope>>, args: Vec<SExpr>) -> EvalResult {
@@ -478,6 +531,23 @@ fn str_trim(args: Vec<SExpr>) -> EvalResult {
     }
 }
 
+fn str_split(args: Vec<SExpr>) -> EvalResult {
+    if 2 != args.len() {
+        return Err(str!("split accepts 2 argument"));
+    }
+
+    match (&args[0], &args[1]) {
+        (SExpr::String(s), SExpr::Char(c)) => {
+            let frags: Vec<SExpr> = s
+                .split(|x| x == *c)
+                .map(|s| SExpr::String(Rc::from(s)))
+                .collect();
+            Ok(SExpr::Vector(Rc::from(frags)))
+        }
+        _ => Err(str!("param must be a string")),
+    }
+}
+
 fn empty(args: Vec<SExpr>) -> EvalResult {
     if 1 != args.len() {
         return Err(str!("empty? accepts a single argument"));
@@ -575,6 +645,25 @@ fn iter_seq(args: Vec<SExpr>) -> EvalResult {
     }
 }
 
+fn iter_vec(args: Vec<SExpr>) -> EvalResult {
+    if 1 != args.len() {
+        return Err(str!("seq accepts 1 argument"));
+    }
+
+    match &args[0] {
+        SExpr::Cons(_, _) => {
+            let mut result: Vec<SExpr> = vec![];
+            let mut cur = &args[0];
+            while let SExpr::Cons(car, cons) = cur {
+                result.push(*car.clone());
+                cur = cons;
+            }
+            Ok(SExpr::Vector(Rc::from(result)))
+        }
+        _ => Err(str!("vec is only defined for cons")),
+    }
+}
+
 fn iter_reduce(args: Vec<SExpr>) -> EvalResult {
     if 2 != args.len() {
         return Err(str!("reduce accepts 2 arguments"));
@@ -596,11 +685,46 @@ fn iter_reduce(args: Vec<SExpr>) -> EvalResult {
     }
 }
 
+fn iter_map(args: Vec<SExpr>) -> EvalResult {
+    if 2 != args.len() {
+        return Err(str!("map accepts 2 arguments"));
+    }
+
+    let mut result: Vec<SExpr> = vec![];
+
+    let pred = &args[0];
+    let coll = &args[1];
+    match (pred, coll) {
+        (SExpr::Closure(_, _, _), SExpr::Cons(_, _))
+        | (SExpr::Closure(_, _, _), SExpr::Vector(_))
+        | (SExpr::BuiltinFn(_), SExpr::Cons(_, _)) => {
+            iter_each_do(coll, |el: &SExpr| {
+                result.push(call_callable(pred, vec![el.clone()])?);
+                Ok(true)
+            })?;
+        }
+        (call, on) => {
+            return Err(format!(
+                "map not supported for {} x {}",
+                call.name(),
+                on.name()
+            ))
+        }
+    }
+
+    let mut cur = SExpr::NIL;
+    for el in result.into_iter().rev() {
+        cur = SExpr::Cons(Box::from(el), Rc::from(cur));
+    }
+    Ok(cur)
+}
+
 fn iter_each_do<F>(iter: &SExpr, mut f: F) -> Result<Option<(usize, SExpr)>, String>
 where
     F: FnMut(&SExpr) -> Result<bool, String>,
 {
     match iter {
+        SExpr::NIL => {}
         SExpr::Cons(_, _) => {
             let mut idx = 0;
             let mut cur = iter;
@@ -644,5 +768,28 @@ fn read_file(args: Vec<SExpr>) -> EvalResult {
             Err(e) => Err(e.to_string()),
         },
         _ => Err(str!("only accept string")),
+    }
+}
+
+fn convert(args: Vec<SExpr>) -> EvalResult {
+    if 2 != args.len() {
+        return Err(str!("convert accepts 2 arguments"));
+    }
+
+    let from = &args[0];
+    match (&args[0], &args[1]) {
+        (SExpr::String(s), SExpr::Symbol(sym)) => match &**sym {
+            ":integer" => match s.parse::<i64>() {
+                Ok(i) => Ok(SExpr::Integer(i)),
+                Err(e) => Err(e.to_string()),
+            },
+            _ => Err(format!("conversion from string to {} is undefined", sym)),
+        },
+        (_, SExpr::Symbol(sym)) => Err(format!(
+            "conversion from {} to {} is undefined",
+            from.name(),
+            sym
+        )),
+        _ => Err(str!("second parameter needs to be a symbol")),
     }
 }
