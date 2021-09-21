@@ -1,12 +1,14 @@
-use crate::types::SExpr;
+use crate::types::{Map, SExpr};
 use crate::utils;
-use std::rc::Rc;
 
 // TODO:
 // - read cons (foo . bar)
 // - reader macros such as quote and backtick
 
 use regex::Regex;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub fn read(input: &String) -> Result<SExpr, String> {
     let mut input = input.trim();
@@ -42,6 +44,7 @@ fn read_sexpr(s: &str) -> Result<(SExpr, usize), String> {
         Some(c) => match c {
             '(' => read_list(s),
             '[' => read_vector(s),
+            '{' => read_map(s),
             '"' => read_string(s),
             '\'' => read_char(s),
             '0'..='9' => read_number(s),
@@ -77,6 +80,15 @@ fn read_vector(s: &str) -> Result<(SExpr, usize), String> {
     }
 
     return Ok((SExpr::Vector(Rc::new(vec)), idx));
+}
+
+fn read_map(s: &str) -> Result<(SExpr, usize), String> {
+    let (_seq, idx) = read_sequence(s, '}')?;
+
+    let map = HashMap::new();
+    // TODO: literal map is sequence of [key value] pairs
+
+    return Ok((SExpr::Map(Rc::from(RefCell::from(Map { map }))), idx));
 }
 
 fn read_sequence(s: &str, until: char) -> Result<(Vec<SExpr>, usize), String> {

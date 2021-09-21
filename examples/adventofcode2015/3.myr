@@ -1,0 +1,33 @@
+(define update-position
+  (λ [[x y] move]
+     (cond (= '^' move) [x (+ y 1)]
+           (= 'v' move) [x (- y 1)]
+           (= '<' move) [(- x 1) y]
+           :else        [(+ x 1) y])))
+
+(define part1
+  (λ [input]
+     (let [[houses _] (fold (λ [[houses pos] move]
+                               [(map:insert houses pos true)
+                                (update-position pos move)])
+                            [{} [0 0]] (seq (str:chars input)))]
+       (map:size houses))))
+
+(define part2
+  (λ [input]
+     (let [[houses _] (fold (λ [[houses pos1 pos2 turn] move]
+                               (if (= 0 (mod turn 2))
+                                 [(map:insert houses pos2 true)
+                                  (update-position pos1 move)
+                                  pos2
+                                  (+ turn 1)]
+                                 [(map:insert houses pos1 true)
+                                  pos1
+                                  (update-position pos2 move)
+                                  (+ turn 1)]))
+                            [{} [0 0] [0 0] 0] (seq (str:chars input)))]
+       (map:size houses))))
+
+(let [input (str:trim (io:read-file "examples/adventofcode2015/input/3.txt"))]
+  [(part1 input)
+   (part2 input)])

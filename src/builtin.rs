@@ -65,9 +65,13 @@ pub fn scope() -> Rc<RefCell<Scope>> {
     define_function(&ns, "seq", iter_seq);
     define_function(&ns, "vec", iter_vec);
     define_function(&ns, "reduce", iter_reduce);
+    define_function(&ns, "fold", iter_fold);
     define_function(&ns, "map", iter_map);
 
     define_function(&ns, "io:read-file", read_file);
+
+    define_function(&ns, "map:size", map_size);
+    define_function(&ns, "map:insert", map_insert);
 
     ns
 }
@@ -316,23 +320,8 @@ fn equal_expr(args: Vec<SExpr>) -> EvalResult {
 
     let mut cur = &args[0];
     for el in args[1..].iter() {
-        match (cur, el) {
-            (SExpr::Symbol(a), SExpr::Symbol(b)) => {
-                if *a != *b {
-                    return Ok(SExpr::Boolean(false));
-                }
-            }
-            (SExpr::Integer(a), SExpr::Integer(b)) => {
-                if a != b {
-                    return Ok(SExpr::Boolean(false));
-                }
-            }
-            (SExpr::Char(a), SExpr::Char(b)) => {
-                if a != b {
-                    return Ok(SExpr::Boolean(false));
-                }
-            }
-            _ => return Ok(SExpr::Boolean(false)),
+        if !cur.eq(el) {
+            return Ok(SExpr::Boolean(false));
         }
         cur = el;
     }
@@ -685,6 +674,31 @@ fn iter_reduce(args: Vec<SExpr>) -> EvalResult {
     }
 }
 
+fn iter_fold(args: Vec<SExpr>) -> EvalResult {
+    if 3 != args.len() {
+        return Err(str!("fold accepts 3 arguments"));
+    }
+
+    let pred = &args[0];
+    let init = &args[1];
+    let coll = &args[2];
+    match (pred, coll) {
+        (SExpr::Closure(_, _, _), SExpr::Cons(_, _)) | (SExpr::BuiltinFn(_), SExpr::Cons(_, _)) => {
+            let mut acc: SExpr = init.clone();
+            iter_each_do(coll, |el: &SExpr| {
+                acc = call_callable(pred, vec![acc.clone(), el.clone()])?;
+                Ok(true)
+            })?;
+            Ok(acc)
+        }
+        _ => Err(format!(
+            "fold not supported {} {}",
+            pred.name(),
+            coll.name()
+        )),
+    }
+}
+
 fn iter_map(args: Vec<SExpr>) -> EvalResult {
     if 2 != args.len() {
         return Err(str!("map accepts 2 arguments"));
@@ -791,5 +805,30 @@ fn convert(args: Vec<SExpr>) -> EvalResult {
             sym
         )),
         _ => Err(str!("second parameter needs to be a symbol")),
+    }
+}
+
+fn map_insert(args: Vec<SExpr>) -> EvalResult {
+    if 3 != args.len() {
+        return Err(str!("map:insert accepts 3 arguments"));
+    }
+
+    match (&args[0], &args[1], &args[2]) {
+        (SExpr::Map(m), key, val) => {
+            m.borrow_mut().map.insert(key.clone(), val.clone());
+        }
+        _ => return Err(str!("insert is only defined for map")),
+    }
+    Ok(args[0].clone())
+}
+
+fn map_size(args: Vec<SExpr>) -> EvalResult {
+    if 1 != args.len() {
+        return Err(str!("map:size accepts 1 argument"));
+    }
+
+    match &args[0] {
+        SExpr::Map(m) => Ok(SExpr::Integer(m.borrow().map.len() as i64)),
+        _ => Err(str!("map:size only supported for map")),
     }
 }

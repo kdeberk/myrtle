@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Scope {
     name: String,
     parent: Option<Rc<RefCell<Scope>>>,

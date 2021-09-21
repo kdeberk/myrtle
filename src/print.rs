@@ -46,6 +46,19 @@ impl fmt::Display for SExpr {
                 }
                 write!(f, "]")?
             }
+            SExpr::Map(m) => {
+                write!(f, "{{")?;
+                for (i, (key, val)) in m.borrow().map.iter().enumerate() {
+                    write!(f, "<")?;
+                    write!(f, "{} ", key)?;
+                    write!(f, "{}", val)?;
+                    write!(f, ">")?;
+                    if i < m.borrow().map.len() - 1 {
+                        write!(f, " ")?;
+                    }
+                }
+                write!(f, "}}")?;
+            }
             SExpr::Closure(params, _, body) => {
                 write!(f, "<closure ")?;
                 for el in params.iter() {
